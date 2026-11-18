@@ -1,0 +1,8 @@
+.tools/
+node_modules/
+build/
+dist/
+*.jks
+*.log
+.synergy-local/
+test-results/

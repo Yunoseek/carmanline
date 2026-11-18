@@ -1,0 +1,71 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { mkdir,writeFile } from 'node:fs/promises';
+import { legacyFixture } from '../tests/ui-fixtures.mjs';
+await mkdir('dist',{recursive:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+const errors=[];
+const context=await browser.newContext({viewport:{width:412,height:868},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+const page=await context.newPage();page.on('pageerror',err=>errors.push(err.message));
+const url=process.env.DEMO_URL || 'http://127.0.0.1:4174';
+try {
+ await page.goto(url);
+ assert.equal(await page.title(),'Carmanline');
+ assert.equal(await page.locator('h1').textContent(),'Carmanline');
+ assert.equal(await page.locator('.big-count').textContent(),'0');
+ assert.equal(await page.evaluate(()=>window.demo.getState().cards.length),0);
+ for(const size of [{width:320,height:640},{width:412,height:868},{width:412,height:915}]) {
+  await page.setViewportSize(size);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No horizontal overflow');
+  assert.ok(await page.evaluate(()=>document.querySelector('.home-nav').getBoundingClientRect().bottom<=innerHeight+1),'Bottom navigation fits phone');
+ }
+ await page.setViewportSize({width:412,height:868});
+ await page.screenshot({path:'dist/carmanline-home-preview.png',animations:'disabled'});
+ await page.locator('[data-act="start"]').click();
+ assert.equal(await page.locator('#photos').count(),1);
+ assert.equal(await page.locator('[data-act="sample"]').count(),0);
+ await page.locator('[data-act="home"]').click();await page.locator('[data-act="library"]').click();
+ assert.equal(await page.locator('.library-empty').count(),1);
+ assert.equal(await page.locator('[data-act="edit-library"]').isDisabled(),true);
+ await context.close();
+
+ const upgraded=await browser.newContext({viewport:{width:412,height:868},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+ await upgraded.addInitScript(data=>localStorage.setItem('liushi-demo-v1',JSON.stringify(data)),legacyFixture());
+ const p=await upgraded.newPage();p.on('pageerror',err=>errors.push(err.message));await p.goto(url);
+ assert.deepEqual(await p.evaluate(()=>window.demo.getState().cards.map(c=>c.id).sort()),['custom-focus','custom-formula-a','custom-formula-b','custom-formula-c','custom-wrong-a','custom-wrong-b']);
+ assert.equal(await p.evaluate(()=>window.demo.getState().settings.model),'keep-vision-model');
+ await p.locator('[data-act="start"]').click();assert.equal(await p.locator('.option.correct').count(),1,'Pending revealed answer survives migration');
+ await p.locator('[data-outcome="know"]').click();await p.locator('[data-act="undo"]').click();
+ await p.locator('[data-outcome="guess"]').click();
+ await p.locator('[data-act="exit"]').click();await p.locator('.modal [data-act="home"]').click();
+ await p.locator('[data-act="library"]').click();await p.locator('[data-act="edit-library"]').click();
+ await p.locator('[data-act="filter"][data-value="数学"]').click();await p.locator('[data-act="select-all"]').click();
+ assert.equal(await p.locator('[role="checkbox"][aria-checked="true"]').count(),3);
+ await p.locator('[data-act="select-all"]').click();assert.equal(await p.locator('[data-act="delete-selected"]').isDisabled(),true);
+ await p.locator('[data-act="filter"][data-value="物理"]').click();await p.locator('[data-act="select-all"]').click();
+ await p.locator('[data-act="delete-selected"]').click();await p.locator('.modal [data-act="close-modal"]').click();
+ assert.equal(await p.evaluate(()=>window.demo.getState().cards.length),6,'Cancel does not delete');
+ await p.locator('[data-act="delete-selected"]').click();await p.locator('.modal [data-act="confirm-delete"]').click();
+ assert.equal(await p.evaluate(()=>window.demo.getState().cards.some(c=>c.id==='custom-formula-b')),false);
+ assert.equal(await p.locator('.library-card').count(),3);
+ await p.locator('[data-act="edit-library"]').click();await p.locator('[data-act="select-all"]').click();
+ await p.screenshot({path:'dist/carmanline-library-preview.png',animations:'disabled'});
+ assert.equal(await p.locator('[role="checkbox"][aria-checked="true"]').count(),3);
+ await p.locator('[data-act="edit-library"]').click();await p.locator('[data-act="home"]').click();
+ await p.locator('[data-act="kind"][data-kind="wrong"]').click();await p.locator('[data-act="library"]').click();
+ await p.locator('[data-act="edit-library"]').click();await p.locator('[data-act="select-all"]').click();
+ assert.equal(await p.locator('[role="checkbox"][aria-checked="true"]').count(),2);
+ await p.locator('[data-act="delete-selected"]').click();await p.locator('.modal [data-act="confirm-delete"]').click();
+ assert.equal(await p.locator('.library-empty').count(),1);
+ assert.equal(await p.evaluate(()=>window.demo.getState().cards.filter(c=>c.kind==='wrong').length),0);
+ assert.equal(await p.evaluate(()=>window.demo.getState().cards.filter(c=>c.kind==='formula').length),3);
+ // Export the resulting state, then load it in a new context without the legacy fixture initializer.
+ const finalState=await p.evaluate(()=>window.demo.getState());await upgraded.close();
+ const reloaded=await browser.newContext({viewport:{width:412,height:868}});
+ await reloaded.addInitScript(data=>localStorage.setItem('liushi-demo-v1',JSON.stringify(data)),finalState);
+ const r=await reloaded.newPage();await r.goto(url);assert.equal(await r.evaluate(()=>window.demo.getState().cards.length),3);
+ assert.equal(await r.evaluate(()=>window.demo.getState().cards.some(c=>c.id==='custom-formula-b')),false);
+ assert.deepEqual(errors,[]);
+ const report={status:'passed',version:'0.3.1',viewports:['320×640','412×868','412×915'],checks:['empty fresh install','Carmanline branding','warm home layout fits phone','no sample entry','v0.1 sample-only migration','API settings preserved','pending review preserved','self-rating undo','subject-scoped select all','cancel deletion','formula multi-delete','wrong-question select-all delete','deleted data stays deleted'],browserErrors:errors};
+ await writeFile('dist/ui-verification.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+} finally {await browser.close();}

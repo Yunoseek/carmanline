@@ -4,10 +4,10 @@ import { migrateState, emptyState, removeCards } from '../web/state.mjs';
 import { seed } from './fixtures.mjs';
 import { copy,createSession,question,reveal,grade,undo,nextItem } from '../web/core.mjs';
 const now=new Date(2026,10,18,10).getTime();
-function custom(id,kind='formula') {return {...copy(seed(now).find(c=>c.kind===kind)),id};}
+function custom(id,kind='formula') {return {...copy(seed(now).find(c=>c.kind===kind)),id,cue:id};}
 function answer(session,cards,id,outcome='know') {session.current={question:question(cards.find(c=>c.id===id)),revealed:false};reveal(session,cards,0,now);grade(session,cards,outcome,now);}
 test('new installation starts with an empty library and no sessions',()=>{
- const state=migrateState();assert.equal(state.cards.length,0);assert.deepEqual(state.sessions,{});assert.equal(state.schemaVersion,2);assert.equal(state.settings.limit,30);
+ const state=migrateState();assert.equal(state.cards.length,0);assert.deepEqual(state.sessions,{});assert.equal(state.schemaVersion,3);assert.equal(state.settings.limit,30);
 });
 test('v0.1 upgrade removes only seeded IDs and preserves user imports and settings',()=>{
  const mine=custom('custom-user-001');const old={cards:[...seed(now),mine],sessions:{},settings:{limit:20,endpoint:'https://example.invalid/chat/completions',model:'vision',hasKey:true},activity:['2026-11-17']};

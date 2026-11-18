@@ -39,20 +39,66 @@ export function validateItem(input,kind,renderMath=()=>{},path='内容') {
  }
  return out;
 }
+function jsonErrorOffset(raw) {
+ // Some WebViews omit offsets from JSON.parse errors. Scan syntax without repairing input.
+ const lexeme=/"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null|[{}\[\],:]/y;
+ let offset=0;
+ function next() {
+  while(offset<raw.length && /[ \r\n\t]/.test(raw[offset]))offset++;
+  lexeme.lastIndex=offset;
+  const token=lexeme.exec(raw)?.[0];
+  if(!token)throw offset;
+  offset+=token.length;
+  return token;
+ }
+ function expect(token, expected) {if(token!==expected)throw offset-token.length;}
+ function value(token,depth) {
+  if(depth>512)throw offset-token.length;
+  if(token==='[' || token==='{') {
+   const end=token==='['?']':'}';
+   let entry=next();
+   if(entry===end)return;
+   do {
+    if(token==='{') {
+     if(!entry.startsWith('"'))throw offset-entry.length;
+     expect(next(),':');entry=next();
+    }
+    value(entry,depth+1);
+    const separator=next();
+    if(separator===end)return;
+    expect(separator,',');entry=next();
+   } while(true);
+  }
+  if(/^[}\],:]/.test(token))throw offset-token.length;
+ }
+ try {value(next(),0);return offset;}
+ catch(position){return typeof position==='number'?position:null;}
+}
 function readEnvelope(input,kind) {
  if(typeof input!=='string'||new TextEncoder().encode(input).length>MAX_IMPORT_BYTES)fail('JSON','最多支持 2 MB 文本');
  let raw=input.trim().replace(/^\uFEFF/,'');
  if(raw.startsWith('```')){const fenced=/^```(?:json)?\s*\n?([\s\S]*?)\s*```$/i.exec(raw);if(!fenced)fail('JSON','请只粘贴完整 JSON 或一个完整 JSON 代码块');raw=fenced[1];}
- let data;try{data=JSON.parse(raw);}catch{fail('JSON','格式错误，请检查逗号、双引号和反斜杠（LaTeX 的每个 \\ 在 JSON 中写作 \\\\）');}
+ let data;
+ try { data=JSON.parse(raw); }
+ catch (error) {
+  const diagnostic=String(error.message);
+  const position=/position (\d+)/i.exec(diagnostic);
+  const offset=position?Number(position[1]):/end of (?:JSON|data)|unterminated/i.test(diagnostic)?raw.length:jsonErrorOffset(raw);
+  const lines=offset===null?null:raw.slice(0,offset).split(/\r\n|\r|\n/);
+  const location=lines?`（第 ${lines.length} 行，第 ${lines[lines.length-1].length+1} 列）`:'';
+  const cause=/escape|control character/i.test(diagnostic)?'请检查字符串转义，LaTeX 中的反斜杠在 JSON 内需写两次':offset===raw.length?'内容在结束前中断，请检查最后的引号和括号':'请检查该处的逗号、引号和括号';
+  fail('JSON',`格式错误${location}，${cause}`);
+ }
  exact(data,['format','items'],'JSON');if(data.format!==FORMATS[kind])fail('JSON.format','当前板块需要 '+FORMATS[kind]);
- if(!Array.isArray(data.items)||!data.items.length||data.items.length>MAX_IMPORT_ITEMS)fail('JSON.items','需要 1～100 条内容；空结果请先补齐再导入');
+ if(!Array.isArray(data.items)||!data.items.length)fail('JSON.items','需要 1～100 条内容；空结果请先补齐再导入');
+ if(data.items.length>MAX_IMPORT_ITEMS)fail('JSON.items',`本次 ${data.items.length} 条，超出上限 ${MAX_IMPORT_ITEMS} 条`);
  return data;
 }
 export function parseImport(input,kind,renderMath=()=>{}) {
  return readEnvelope(input,kind).items.map((item,i)=>validateItem(item,kind,renderMath,'第 '+(i+1)+' 条'));
 }
 function collectItems(data,kind,renderMath,photo=false) {
- const items=[],issues=[];
+ const items=[],issues=[],sourceIndices=[];
  data.items.forEach((raw,i)=>{
   const path='第 '+(i+1)+' 条',title=typeof raw?.title==='string'?raw.title.slice(0,160):path;
   try {
@@ -64,10 +110,11 @@ function collectItems(data,kind,renderMath,photo=false) {
     if(filtered){if(variants.length<3)fail(path+'.distractors','有效混淆项不足 3 个，请补齐后重新导入');candidate={...candidate,distractors:variants};}
    }
    items.push(validateItem(candidate,kind,renderMath,path));
+   sourceIndices.push(i+1);
    if(filtered)issues.push({index:i+1,title,message:'已移除 '+filtered+' 个无效或重复混淆项，其余内容已保留',skipped:false});
-  }catch(err){issues.push({index:i+1,title,message:String(err.message||'内容格式无效').slice(0,240),skipped:true});}
+  }catch(err){issues.push({index:i+1,title,message:String(err.message||'内容格式无效').slice(0,240),skipped:true,raw});}
  });
- return {items,issues,total:data.items.length};
+ return {items,issues,sourceIndices,total:data.items.length};
 }
 export function parseImportBatch(input,kind,renderMath=()=>{}) {
  return collectItems(readEnvelope(input,kind),kind,renderMath);

@@ -4,9 +4,9 @@ import { copy,createSession,question,reveal,grade } from '../web/core.mjs';
 import {emptyState} from '../web/state.mjs';
 export function roundFixture(now=Date.now()) {
  const state=emptyState(),source=seed(now).find(c=>c.id==='p01');
- state.cards=Array.from({length:65},(_,i)=>({...copy(source),id:'custom-round-'+i,title:'公式 '+(i+1),createdAt:now+i}));
+ state.cards=Array.from({length:65},(_,i)=>({...copy(source),id:'custom-round-'+i,title:'公式 '+(i+1),cue:'条件 '+(i+1),createdAt:now+i}));
  const s=createSession(state.cards,'formula',30,'daily',now);
- for(const item of [...s.items])for(let pass=0;pass<2;pass++) {
+ for(const item of [...s.items])for(let pass=0;pass<3;pass++) {
   const c=state.cards.find(c=>c.id===item.id);s.current={question:question(c),revealed:false};
   reveal(s,state.cards,null,now);grade(s,state.cards,'know',now);
  }
@@ -33,6 +33,7 @@ export function legacyFixture(now=Date.now()) {
     card(builtins.find(c=>c.id==='w02'),'custom-wrong-b','自录 · 动能错题'),
   ];
   const daily=createSession([builtins[0],...mine.slice(0,3)],'formula',4,'daily',now);
+  delete daily.targetPasses;
   daily.current={question:question(builtins[0]),revealed:false};
   reveal(daily,[...builtins,...mine],0,now);grade(daily,[...builtins,...mine],'know',now);
   const q=question(mine[0]);daily.current={question:q,revealed:false};

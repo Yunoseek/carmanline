@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { connect, home, restart, run } from './android-test-client.mjs';
+import { createSession, makeCard, question } from '../web/core.mjs';
+
+assert.equal(run(['emu','avd','name']).split(/\s+/,1)[0],'FormulaDemo');
+const version='0.4.0', apk=`dist/carmanline-v${version}.apk`;
+const now=Date.now();
+const cards=Array.from({length:6},(_,i)=>makeCard({id:`upgrade-${i}`,kind:'formula',subject:'数学',title:`升级公式 ${i}`,latex:`x=${i}`,cue:'',distractors:[`x=${i+6}`,`x=${i+12}`,`x=${i+18}`]},now));
+const legacy=createSession(cards,'formula',30,'daily',now);
+delete legacy.targetPasses;
+legacy.items.find(item=>item.id===cards[0].id).passes=1;
+const originalQuestion=question(cards[0]);
+legacy.current={question:originalQuestion,selected:originalQuestion.options.findIndex(option=>option.correct),revealed:true,seenRecorded:true};
+const duplicate={...cards[0],id:'upgrade-duplicate',title:'旧版重复项'};
+cards.push(duplicate);
+legacy.items.push({...legacy.items.find(item=>item.id===cards[0].id),id:duplicate.id});
+const saved={schemaVersion:2,cards,sessions:{'formula:daily':legacy},activity:[],settings:{limit:10}};
+
+run(['install','-r','dist/carmanline-v0.3.1.apk']);restart();
+let client=await connect();
+try {
+  await client.evaluate(`Android.saveProgress(${JSON.stringify(JSON.stringify(saved))})`);
+  await client.evaluate(`Android.saveSettings(${JSON.stringify(JSON.stringify({endpoint:'https://example.invalid/chat/completions',model:'upgrade-fixture',key:'fake-upgrade-fixture-key'}))})`);
+  client.close();
+  run(['install','-r',apk]);restart();client=await connect();
+  let state=await client.evaluate('window.demo.getState()');
+  assert.equal(state.schemaVersion,3);assert.equal(state.cards.length,7);assert.equal(state.settings.limit,10);assert.equal(state.settings.model,'upgrade-fixture');assert.equal(state.settings.hasKey,true);
+  assert.match(run(['shell','dumpsys','package','app.formula.recall']),/versionName=0\.4\.0/);
+  const session=state.sessions['formula:daily'];
+  assert.equal(session.items.length,6);assert.equal(session.items.find(item=>item.id===cards[0].id).passes,1);assert.deepEqual(session.current,legacy.current);
+  await client.click('[data-act=start]');
+  assert.equal(await client.evaluate('document.querySelector(".progress-count").textContent'),'1/12 次记起');
+  await client.click('[data-act=grade]');
+  await client.click('[data-act=skip-question]');
+  state=await client.evaluate('window.demo.getState()');
+  client.close();restart();client=await connect();await client.click('[data-act=start]');
+  assert.deepEqual(await client.evaluate('window.demo.getState().sessions'),state.sessions);
+
+  await home(client);await client.click('[data-act=library]');await client.click('[data-act=scan-duplicates]');await client.click('[data-act=preview-exact-merge]');
+  await client.click('[data-act=confirm-formula-merge]');
+  assert.equal(await client.evaluate('window.demo.getState().cards.length'),6);
+  await client.click('[data-act=restore-formula-merge]');
+  assert.equal(await client.evaluate('window.demo.getState().cards.length'),7);
+  await home(client);await client.click('[data-act=import]');await client.click('[data-mode=json]');
+  const valid={kind:'formula',subject:'数学',title:'新公式',latex:'x=66',cue:'',distractors:['x=60','x=61','x=62']};
+  const invalid={...valid};delete invalid.latex;
+  const payload=JSON.stringify({format:'carmanline.formula.v1',items:[valid,invalid]});
+  await client.evaluate(`(()=>{const input=document.querySelector('#json-input');input.value=${JSON.stringify(payload)};input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await client.click('[data-act=parse-json]');await client.until('Boolean(document.querySelector(".confirm-page"))');
+  await client.click('[data-act=confirm-import]');await client.until('Boolean(document.querySelector(".import-result"))');
+  assert.match(await client.evaluate('document.querySelector(".result-count").textContent'),/新增 1 · 跳过（重复） 0 · 失败 1/);
+  assert.equal(await client.evaluate('document.querySelector("#json-input").value'),'');
+  await client.click('[data-act=retry-failed-json]');
+  assert.deepEqual(await client.evaluate('JSON.parse(document.querySelector("#json-input").value).items'),[invalid]);
+  const report={status:'passed',version,apkSha256:createHash('sha256').update(await readFile(apk)).digest('hex'),platform:{android:run(['shell','getprop','ro.build.version.release']),webView:await client.evaluate('navigator.userAgent')},checks:['signed in-place upgrade from 0.3.1','library, API settings and revealed in-progress question preserved','legacy review target and queue deduplication','force-stop and resume','merge and restore in native storage','partial JSON result, clearing and refill']};
+  await writeFile('dist/v040-android-verification.json',JSON.stringify(report,null,2));
+  console.log(JSON.stringify(report));
+} finally {client.close();}

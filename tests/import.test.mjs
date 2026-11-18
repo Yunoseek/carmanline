@@ -43,8 +43,15 @@ test('batch errors identify the exact row and leave the input untouched',()=>{
 test('required fields, item limits, empty results and oversized text are rejected',()=>{
  const f=formula();delete f.cue;assert.throws(()=>parseImport(json([f]),'formula',render),/cue/);
  assert.throws(()=>parseImport(json([]),'formula',render),/1～100/);
- assert.throws(()=>parseImport(json(Array(101).fill(formula())),'formula',render),/1～100/);
+ assert.throws(()=>parseImport(json(Array(101).fill(formula())),'formula',render),/101 条，超出上限 100 条/);
  assert.throws(()=>parseImport(' '.repeat(MAX_IMPORT_BYTES+1),'formula',render),/2 MB/);
+});
+test('syntax errors include the location and partial batches retain original rows',()=>{
+ const invalid='{"format":"carmanline.formula.v1",\n"items":[,]}';
+ assert.throws(()=>parseImportBatch(invalid,'formula',render),/第 2 行，第 10 列/);
+ const good=formula(), bad={...good};delete bad.latex;
+ const report=parseImportBatch(json([bad,good]),'formula',render);
+ assert.deepEqual(report.sourceIndices,[2]);assert.equal(report.issues[0].index,1);assert.deepEqual(report.issues[0].raw,bad);
 });
 test('AI replies require a complete validated item without changing the caller’s draft',()=>{
  const f=formula(),original=JSON.stringify(f);assert.deepEqual(parseChatResult({reply:'已修改',item:f},'formula',render).item,f);

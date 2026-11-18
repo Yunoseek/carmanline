@@ -32,7 +32,8 @@ if (-not (Test-Path -LiteralPath $key)) {
     & keytool -genkeypair -keystore $key -storepass android -keypass android -alias liushi-demo -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=Liushi Demo,O=Local Development,C=CN' -noprompt
     if ($LASTEXITCODE -ne 0) { throw 'Demo key generation failed' }
 }
-$apk = Join-Path $dist 'carmanline-v0.3.1.apk'
+$version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+$apk = Join-Path $dist "carmanline-v$version.apk"
 & (Join-Path $tools 'apksigner.bat') sign --ks $key --ks-key-alias liushi-demo --ks-pass pass:android --key-pass pass:android --out $apk (Join-Path $build 'aligned.apk')
 if ($LASTEXITCODE -ne 0) { throw 'APK signing failed' }
 & (Join-Path $tools 'apksigner.bat') verify --verbose $apk

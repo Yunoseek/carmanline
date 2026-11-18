@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {makeCard,copy,day,addDays,createSession,nextRoundCards,question,reveal,grade} from '../web/core.mjs';
 const now=new Date(2026,10,18,12).getTime(),today=day(now);
-function card(id,changes={}) {return {...makeCard({id,kind:'formula',title:id,latex:'x=1',distractors:['x=2','x=3','x=4']},now),...changes};}
+function card(id,changes={}) {return {...makeCard({id,kind:'formula',title:id,cue:id,latex:'x=1',distractors:['x=2','x=3','x=4']},now),...changes};}
 function finish(s,cards) {
- for(const item of [...s.items])for(let pass=0;pass<2;pass++) {
+ for(const item of [...s.items])for(let pass=0;pass<3;pass++) {
   s.current={question:question(cards.find(c=>c.id===item.id)),revealed:false};
   reveal(s,cards,null,now);grade(s,cards,'know',now);
  }

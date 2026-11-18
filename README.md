@@ -1,6 +1,6 @@
-# Carmanline 0.3.1
+# Carmanline 0.4.0
 
-安卓公式与错题巩固应用。[下载 v0.3.1 安卓安装包](https://github.com/Yunoseek/carmanline/releases/tag/v0.3.1)。本地构建的安装包位于 `dist/carmanline-v0.3.1.apk`。
+安卓公式与错题巩固应用。[下载 v0.4.0 安卓安装包](https://github.com/Yunoseek/carmanline/releases/tag/v0.4.0)。本地构建的安装包位于 `dist/carmanline-v0.4.0.apk`。
 
 ## 更新安装
 
@@ -9,6 +9,13 @@
 本次升级按旧示例的固定 ID 清理默认的 30 个公式、5 道错题及 1 个重点示例。用户录入的内容保留，即使它和某个示例的公式相同。新安装从空题库开始，不再提供内置样例入口。
 
 ## 本版变化
+
+- 答错后的「继续」和「我手滑了」并排显示。「我手滑了」按一次记起处理。答题前可以「稍后再来」，把这道题放到队尾。
+- 每轮把到期题目洗牌，答错的题较早重现，答对的题间隔更远。旧版已开始的轮次沿用原目标，新轮次需连续记起三次。题量不足以隔开三题时，短暂等待后可继续。
+- JSON 入库后显示新增、重复跳过和失败数。可复制、回填失败项或查看原文。处理成功后自动清空输入及文件名，关掉结果后五秒内可恢复输入。整份 JSON 的语法错误会保留输入并提示位置。
+- 公式按归一化后的 LaTeX 和适用条件查重。JSON、照片和手动录入共享查重。「我的公式 → 扫描重复」可预览、合并存量条目，30 天内可在合并回收站恢复。
+
+## 早期版本变化
 
 - JSON 输入栏新增“清空”，图片选择区新增“清除图片”；在当前页即可重新输入或选择同一文件。清除同时重置错误和对应未入库草稿，迟到的读文件/识别结果不会恢复已清空内容，不影响题库。
 - 照片及 JSON 按条目校验：坏项单独列出原因，有效项继续录入；混淆项中存在坏项但仍有至少 3 个有效项时，保留该公式。多张照片中一张失败也继续处理其他照片。
@@ -37,7 +44,7 @@
 
 对话修改每次作用于当前一条待录入草稿，支持多轮追问和手动改动；不会直接修改已入库内容。照片和对话记录仅保留于当前页面内存，完成入库或清除时释放；未确认草稿在关闭进程后需重新录入。
 
-复习、公式渲染与字体均可离线使用。每条内容连续答对两次完成当日巩固；跨日使用六盒排程。重点清单每日单独复习。Android 端使用同步原生保存，支持立即强退后继续。
+复习、公式渲染与字体均可离线使用。新开的巩固轮次需连续记起三次；跨日使用六盒排程。重点清单每日单独复习。Android 端使用同步原生保存，支持强退后继续。
 
 ## 开发与构建
 
@@ -54,7 +61,7 @@ npm.cmd run build:android
 
 网页预览：先运行 `node scripts/prepare-assets.mjs`，再运行 `npm.cmd start`。手机界面测试：`node scripts/verify-ui.mjs`；倒计时及连续三轮测试：`node scripts/verify-review.mjs`；录入流程：`node scripts/verify-import.mjs`；清除、部分成功及中断恢复：`node scripts/verify-input-v031.mjs`。这些测试使用确定的 AI 返回测试替身，不向外部模型发送数据。设置 `DEMO_URL` 可直接使用本地 `web/index.html` 的 file URL，避免本地网络权限依赖。安卓升级、文件选择及新录入操作使用 `scripts/verify-android-v031.mjs`，仅限本项目的 FormulaDemo 模拟器。
 
-`dist/ui-verification.json`、`dist/review-verification.json`、`dist/import-verification.json`、`dist/input-verification.json` 与 `dist/android-verification.json` 保存本版验证记录。安卓记录包含所验证 APK 的 SHA-256；AI 生成结果以测试替身验证，真实服务是否返回有效结果取决于用户配置的模型。
+`node scripts/verify-v040.mjs` 检查本版的窄屏答题、断点续答、录入及合并流程。`node scripts/verify-android-v040.mjs` 在项目专用的 FormulaDemo 模拟器验证从 v0.3.1 覆盖安装。报告保存在 `dist/v040-web-verification.json` 和 `dist/v040-android-verification.json`，安卓记录包含 APK 的 SHA-256。AI 识别流程使用测试替身。
 
 ## 工具与凭据
 
